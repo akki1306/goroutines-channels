@@ -1,39 +1,40 @@
 package main
 
 import (
-	"fmt"
+	"math"
 
 	"pipeline"
 )
 
-func generatorInt() chan interface{} {
+func generateNumber() chan interface{} {
 	out := make(chan interface{})
 	go func() {
 		defer close(out)
-		for i := 0; i <= 10; i++ {
+		for i := 1; i <= 10; i++ {
 			out <- i
 		}
 	}()
-
 	return out
 }
 
-func squareNumber(in chan interface{}) chan interface{} {
-	out := make(chan interface{})
-	go func() {
-		defer close(out)
-		for number := range in {
-			out <- number.(int) * number.(int)
+func squareNumber(number interface{}) (interface{}, error) {
+	var err error
+	/*	if number == 3 {
+			err = errors.New("this is a test error")
 		}
-	}()
-	return out
+	*/return number.(int) * number.(int), err
+}
+
+func squareRootNumber(number interface{}) (interface{}, error) {
+	var err error
+	/*	if number == 25 {
+		err = errors.New("this is a test error")
+	}*/
+	return math.Sqrt(float64(number.(int))), err
 }
 
 func main() {
-	end := make(chan interface{})
-	pipeline := pipeline.Pipeline{ResultChan: end, Generator: generatorInt, Processors: []pipeline.ProcessorFunc{squareNumber}}
-	pipeline.BuildPipeline()
+	pipeline := pipeline.Pipeline{ErrorChan: make(chan interface{}), Processors: []pipeline.ProcessorFunc{squareNumber, squareRootNumber}}
+	pipeline.InitPipeline(generateNumber())
 	pipeline.PrintResults()
-
-	fmt.Println("Successfully finished!!")
 }

@@ -1,35 +1,62 @@
 package pipeline
 
-import (
-	"fmt"
-)
+import "fmt"
 
-type GeneratorFunc func() chan interface{}
-type ProcessorFunc func(in chan interface{}) chan interface{}
+type ProcessorFunc func(in interface{}) (interface{}, error)
 
 type Pipeline struct {
 	ResultChan chan interface{}
 	Processors []ProcessorFunc
-	Generator  GeneratorFunc
+	InputChan  chan interface{}
+	ErrorChan  chan interface{}
 }
 
-func (pipeline *Pipeline) BuildPipeline() {
-	var ch chan interface{}
-	ch = pipeline.Generator()
+func (pipeline *Pipeline) InitPipeline(in chan interface{}) {
 	for i := 0; i < len(pipeline.Processors); i++ {
-		if i == 0 {
-			ch = pipeline.Processors[i](ch)
-		} else {
-			ch = pipeline.Processors[i-1](ch)
-		}
+		in = pipeline.addPipelineMember(in, pipeline.Processors[i])
 	}
-	pipeline.ResultChan = ch
+	pipeline.ResultChan = in
+}
+
+func (pipeline *Pipeline) addPipelineMember(in chan interface{}, proFunc ProcessorFunc) chan interface{} {
+	out := make(chan interface{})
+	go func() {
+		defer close(out)
+		for in != nil {
+			select {
+			case number, ok := <-in:
+				if ok {
+					i, err := proFunc(number)
+					if err != nil {
+						pipeline.ErrorChan <- err
+					}
+					out <- i
+				} else {
+					in = nil
+				}
+			case err := <-pipeline.ErrorChan:
+				pipeline.ErrorChan <- err
+				return
+			}
+		}
+	}()
+
+	return out
 }
 
 func (pipeline *Pipeline) PrintResults() {
-	for number := range pipeline.ResultChan {
-		fmt.Println(number)
-
+	for pipeline.ResultChan != nil {
+		select {
+		case number, ok := <-pipeline.ResultChan:
+			if ok {
+				fmt.Println("Number is ", number)
+			} else {
+				pipeline.ResultChan = nil
+			}
+		case err := <-pipeline.ErrorChan:
+			fmt.Println("Error occurred while processing", err)
+			close(pipeline.ResultChan)
+			return
+		}
 	}
-
 }
